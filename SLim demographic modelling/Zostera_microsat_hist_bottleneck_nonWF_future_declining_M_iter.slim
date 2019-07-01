@@ -1,0 +1,1813 @@
+initialize() {
+	
+	//setSeed(1864843671034);  //this is seed for best run (17) of model with 75% decline
+	initializeSLiMModelType("nonWF");
+	defineConstant("K", 1000); //carrying capacity per subpop
+	defineConstant("m", 0.001); //migration rates
+	defineConstant("M", c(0.86,0.24428439,0.183848897,0.182886625,0.181547052,0.179837754,0.17776842,0.175350824,0.172598746,0.169527936,0.166156015,0.16250238,0.158588086,0.154435709,0.150069183,0.145513623,0.140795124,0.135940539,0.130977237,0.125932857,0.120835036,0.115711141,0.110587995,0.105491603,0.100446895,0.095477475,0.090605399,0.085850969,0.081232564,0.076766504,0.072466948,0.068345829,0.064412831,0.060675405,0.057138812,0.053806208,0.050678756,0.04775576,0.045034828,0.042512035,0.040182116,0.038038647,0.036074241,0.034280729,0.032649346,0.031170897,0.029835917,0.028634815,0.027558004,0.026596013,0.025739585,0.024979757,0.024307928,0.023715909,0.023195962,0.022740825,0.022343727,0.021998398,0.021699059,0.021440419,0.021217658,0.021026408,0.020862729,0.020723086,0.020604322,0.020503629,0.020418523,0.020346811,0.020286572,0.020236125,0.020194008,0.020158952,0.020129861,0.020105795,0.020085945,0.020069622,0.02005624,0.020045301,0.020036387,0.020029145,0.020023278,0.020018539,0.020014724,0.02001166,0.020009208,0.020007251,0.020005694,0.020004459,0.020003482,0.020002711,0.020002105,0.02000163,0.020001258,0.020000969,0.020000744,0.020000569,0.020000435,0.020000331,0.020000251,0.02000019,0.020000143,1)); //age distribution
+	
+	defineConstant("L", 2e8);           // chromosome length, size of genome of Zostera
+	defineConstant("msatCount", 20);    // number of microsats
+	defineConstant("msatMu", 0.002);   // mutation rate per microsat
+	defineConstant("msatUnique", T);    // T = unique msats, F = lineages
+	
+	deleteFile("Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_outputSample1.txt");
+	
+	initializeMutationRate(0.0); 
+	initializeMutationType("m1", 0.5, "f", 0.0);  // neutral
+	initializeRecombinationRate(1e-8);
+	initializeMutationType("m2", 0.5, "f", 0.0); 	// microsatellite mutation type, neutral
+	m2.convertToSubstitution = F;
+	initializeGenomicElementType("g1", m1, 1.0);
+	initializeGenomicElement(g1, 0, L-1);
+	m1.convertToSubstitution = T;  //automatic in WF, save here as we just look at neutral mutations and faster
+}
+
+reproduction() {
+	parent=individual;
+	if (runif(1) < 0.3){
+		child=subpop.addCloned(parent);
+		if (parent.tag==0 & 2){
+			child.tag=2;}
+		else {
+			child.tag=0;}
+	}
+	else{
+		if (parent.tag==2){
+			if (runif(1) < 0.3){
+				child=subpop.addCloned(parent);
+				child.tag=2;}
+			else{
+				child=subpop.addCrossed(parent, subpop.sampleIndividuals(1));
+				child.tag = 1;}
+		}
+		else{
+			child=subpop.addCrossed(parent, subpop.sampleIndividuals(1));
+			child.tag = 1;
+		}
+	}
+}
+1 early() {
+	sim.addSubpop("p1", 100);   //this is "original" size of 100, kept constant for 20000 generations
+	sim.addSubpop("p2", 1000);
+
+	// create some microsatellites at random positions
+	genomes = sim.subpopulations.genomes;
+	positions = rdunif(msatCount, 0, L-1);
+	repeats = rpois(msatCount, 20)+5;
+	
+	for (msatIndex in 0:(msatCount-1))
+	{
+		pos = positions[msatIndex];
+		mut = genomes.addNewDrawnMutation(m2, pos);
+		mut.tag = repeats[msatIndex];
+	}
+	
+	// remember the microsat positions for later
+	defineConstant("msatPositions", positions);
+}
+modifyChild() {
+	// mutate microsatellites with rate msatMu
+	for (genome in child.genomes)
+	{
+		mutCount = rpois(1,msatMu * msatCount); //this determines how many mutations occur over all msats
+		
+		if (mutCount)
+		{
+			mutSites = sample(msatPositions, mutCount);
+			msats = genome.mutationsOfType(m2);
+			
+			for (mutSite in mutSites)
+			{
+				msat = msats[msats.position == mutSite];
+				repeats = msat.tag;
+				
+				// modify the number of repeats by adding -1 or +1
+				repeats = repeats + (rdunif(1, 0, 2) * 2 - 2); 
+				if (repeats <5) 
+					next;
+				
+				//if we're uniquing microsats, do so now
+				if (msatUnique)
+				{
+					all_msats = sim.mutationsOfType(m2);
+					msatsAtSite = all_msats[all_msats.position == mutSite];
+					matchingMut = msatsAtSite[msatsAtSite.tag == repeats];
+					
+					if (matchingMut.size() == 1)
+					{
+						genome.removeMutations(msat);
+						genome.addMutations(matchingMut);
+						next;
+					}
+				}
+				
+				// make a new mutation with the new repeat count
+				genome.removeMutations(msat);
+				msat = genome.addNewDrawnMutation(m2, mutSite);
+				msat.tag = repeats;
+			}
+		}
+	}
+	
+	return T;
+}
+
+1:19999 early() {
+	// life table based individual mortality
+	
+	inds = sim.subpopulations.individuals;
+	ages = inds.age;
+	mortality = M[ages];
+	survival = 1 - mortality;
+
+	inds.fitnessScaling = survival;
+
+	inds[(inds.age>=10)&(sim.subpopulations.individuals.tag==1)].fitnessScaling=0;
+	inds[(inds.age>=10)&(sim.subpopulations.individuals.tag==0)].fitnessScaling=0;
+	// density-dependence, factoring in individual mortality
+	p1.fitnessScaling = 0.1*K / (p1.individualCount * mean(survival));
+	p2.fitnessScaling = K / (p2.individualCount * mean(survival));
+	
+}
+
+20000 early() { p1.fitnessScaling = (0.01*K)/K; 
+p2.fitnessScaling = (0.1*K)/K;} //this presents bottleneck of last ice-age, of 90% reduction
+20001:27989 early(){
+	inds = sim.subpopulations.individuals;
+	ages = inds.age;
+	mortality = M[ages];
+	survival = 1 - mortality;
+	inds.fitnessScaling = survival;
+	inds[(inds.age>=10)&(sim.subpopulations.individuals.tag==1)].fitnessScaling=0;
+	inds[(inds.age>=10)&(sim.subpopulations.individuals.tag==0)].fitnessScaling=0;
+	
+	
+	if (p1.individualCount < 90) //to limit growth again to ca 10000 inds
+	{
+		p1.fitnessScaling = 1.1;} //1.1 takes ca 20 generations to recover
+	else{
+		p1.fitnessScaling = 0.1*K / (p1.individualCount * mean(survival));
+		//p1.fitnessScaling = K / p1.individualCount;
+	}
+	if (p2.individualCount < 900) //to limit growth again to ca 10000 inds
+	{
+		p2.fitnessScaling = 1.1;} //1.1 takes ca 100 generations to recover, to be conservative is good
+	else{
+		p2.fitnessScaling = K / (p2.individualCount * mean(survival));
+
+		//p1.fitnessScaling = K / p1.individualCount;
+	}
+		}
+
+20000:28000 early() {
+nIndividuals = sum(sim.subpopulations.individualCount);
+	nMigrants = rpois(1, nIndividuals * m);
+	migrants = sample(sim.subpopulations.individuals, nMigrants);
+	for (migrant in migrants)
+	{
+		do dest = sample(sim.subpopulations, 1);
+		while (dest == migrant.subpopulation);
+		dest.takeMigrants(migrant);
+	}
+	}		
+
+27900 early(){ p1.fitnessScaling = (0.025*K) / K; 
+p2.fitnessScaling = (0.25*K) / K;}//this is 75%reduction, modelling decline ca 100 yrs ago
+
+27901:28000 early(){ 
+	inds = sim.subpopulations.individuals;
+	ages = inds.age;
+	mortality = M[ages];
+	survival = 1 - mortality;
+	inds.fitnessScaling = survival;
+	inds[(inds.age>=10)&(sim.subpopulations.individuals.tag==1)].fitnessScaling=0;
+	inds[(inds.age>=10)&(sim.subpopulations.individuals.tag==0)].fitnessScaling=0;
+	
+	if (p1.individualCount < 90) //to limit growth again 
+	{
+		p1.fitnessScaling = 1.2;} 
+	else{
+		p1.fitnessScaling = 0.01 * K / (p1.individualCount * mean(survival));
+		//p1.fitnessScaling = K / p1.individualCount;
+	}
+		if (p2.individualCount < 900) //to limit growth again to ca 10000 inds
+	{
+		p2.fitnessScaling = 1.1;} 
+	else{
+		p2.fitnessScaling = K / (p2.individualCount * mean(survival));
+}
+
+}
+
+28001 early() {
+	
+	// add new subpops
+	sim.addSubpop("p3", 0);
+	sim.addSubpop("p4", 0);
+	sim.addSubpop("p5", 0);
+	sim.addSubpop("p6", 0);
+	sim.addSubpop("p7", 0);
+	sim.addSubpop("p8", 0);
+	sim.addSubpop("p9", 0);
+	sim.addSubpop("p10", 0);
+	sim.addSubpop("p11", 0);
+	sim.addSubpop("p12", 0);
+	
+	//populate them by migration from p1
+	migrants_p3=sample(p1.individuals,5);  
+	migrants_p4=sample(p1.individuals,5);
+	migrants_p5=sample(p1.individuals,5);
+	migrants_p6=sample(p1.individuals,5);
+	migrants_p7=sample(p1.individuals,5);
+	migrants_p8=sample(p1.individuals,5);
+	migrants_p9=sample(p1.individuals,5);
+	migrants_p10=sample(p1.individuals,5);
+	migrants_p11=sample(p1.individuals,5);
+	migrants_p12=sample(p1.individuals,5);
+	
+	p3.takeMigrants(migrants_p3);
+	p4.takeMigrants(migrants_p4);
+	p5.takeMigrants(migrants_p5);
+	p6.takeMigrants(migrants_p6);
+	p7.takeMigrants(migrants_p7);
+	p8.takeMigrants(migrants_p8);
+	p9.takeMigrants(migrants_p9);
+	p10.takeMigrants(migrants_p10);
+	p11.takeMigrants(migrants_p11);
+	p12.takeMigrants(migrants_p12);
+	
+
+}
+
+28002:28012 early() {
+	//pop regulation
+	inds = sim.subpopulations.individuals;
+	ages = inds.age;
+	mortality = M[ages];
+	survival = 1 - mortality;
+	inds.fitnessScaling = survival;
+	inds[(inds.age>=10)&(sim.subpopulations.individuals.tag==1)].fitnessScaling=0;
+	inds[(inds.age>=10)&(sim.subpopulations.individuals.tag==0)].fitnessScaling=0;
+	// density-dependence, factoring in individual mortality
+	p1.fitnessScaling = 0.5*K / (p1.individualCount * mean(survival)); //this is Ne calculated with ldNe R sript for K-K 500
+	p2.fitnessScaling = K / (p2.individualCount * mean(survival)); 
+	p3.fitnessScaling = 0.005*K / (p3.individualCount * mean(survival)); //K-BK 5
+	p4.fitnessScaling = 0.031*K / (p4.individualCount * mean(survival)); //K-KR 31
+	p5.fitnessScaling = 0.064*K / (p5.individualCount * mean(survival)); //K-LD 64
+	p6.fitnessScaling = 0.5*K / (p6.individualCount * mean(survival));  //K-NG 500
+	p7.fitnessScaling = 0.017*K / (p7.individualCount * mean(survival)); //K-NI 17
+	p8.fitnessScaling = 0.01*K / (p8.individualCount * mean(survival)); //K-OK 10
+	p9.fitnessScaling = 0.116*K / (p9.individualCount * mean(survival));  //K-ON 116
+	p10.fitnessScaling = 0.001*K / (p10.individualCount * mean(survival)); //K-RT 1
+	p11.fitnessScaling = 0.01*K / (p11.individualCount * mean(survival)); //K-SK 10
+	p12.fitnessScaling = 0.045*K / (p12.individualCount * mean(survival)); //K-SO 45
+}
+
+28012:28112 early() {
+	//pop regulation
+	inds = sim.subpopulations.individuals;
+	ages = inds.age;
+	mortality = M[ages];
+	survival = 1 - mortality;
+	inds.fitnessScaling = survival;
+	inds[(inds.age>=10)&(sim.subpopulations.individuals.tag==1)].fitnessScaling=0;
+	inds[(inds.age>=10)&(sim.subpopulations.individuals.tag==0)].fitnessScaling=0;
+	// density-dependence, factoring in individual mortality
+		if (p1.individualCount>0){
+	p1.fitnessScaling = (p1.individualCount-(0.04*p1.individualCount)) / p1.individualCount; }//this is Ne calculated with ldNe R sript for K-K, 500,decline 4%/years
+	 else {}
+	p2.fitnessScaling = K / (p2.individualCount * mean(survival)); 
+	if (p3.individualCount>0){
+		p3.fitnessScaling = (p3.individualCount -(0.0*p3.individualCount))/ p3.individualCount; }//K-BK 5 0%
+		 else {}
+			if (p4.individualCount>0){
+	p4.fitnessScaling = (p4.individualCount -(0.11*p4.individualCount))/ p4.individualCount; //K-KR 31 11%
+	} else {}
+		if (p5.individualCount>0){
+	p5.fitnessScaling = (p5.individualCount-(p5.individualCount*0)) / p5.individualCount; //K-LD 64 0%
+	} else {}
+	if (p6.individualCount>0){
+	p6.fitnessScaling = (p6.individualCount-(p6.individualCount*0.04)) / p6.individualCount; } //K-NG 500 4%
+		else {}
+	if (p7.individualCount>0){
+	p7.fitnessScaling = (p7.individualCount-(p7.individualCount*0)) / p7.individualCount;} //K-NI 17 0%
+	else {}
+		if (p8.individualCount>0){
+	p8.fitnessScaling = (p8.individualCount-(p8.individualCount*0.04)) / p8.individualCount; //K-OK 10 4%
+	} else {}
+		if (p9.individualCount>0){
+	p9.fitnessScaling = (p9.individualCount-(p9.individualCount*0.11)) / p9.individualCount;  //K-ON 116 11%
+	} else {}
+		if (p10.individualCount>0){
+	p10.fitnessScaling = (p10.individualCount-(p10.individualCount*0.11)) / p10.individualCount; //K-RT 1 11%
+	} else {}
+		if (p11.individualCount>0){
+	p11.fitnessScaling = (p11.individualCount-(p11.individualCount*0.0)) / p11.individualCount ; //K-SK 10
+	} else {}
+		if (p12.individualCount>0){
+	p12.fitnessScaling = (p12.individualCount -(p12.individualCount*0.11))/ p12.individualCount; //K-SO 45 11%
+} else {}
+
+//implement migration!
+nIndividuals = sum(p2.individualCount);
+Nmigrants=rpois(1,nIndividuals*m); //1
+migrants=(sample(p2.individuals,Nmigrants));
+for (migrant in migrants)
+	{
+		do dest = sample(sim.subpopulations, 1);
+		while (dest == migrant.subpopulation);
+		dest.takeMigrants(migrant);
+	}
+
+
+migrants1=p1.individualCount;
+rate1_1=0.0030118;
+
+nIndividuals1 = sum(p1.individualCount);
+if (sum(nIndividuals1)>0) {
+Nmigrants1_1=rpois(1,nIndividuals1*rate1_1); //1
+migrants1_1=(sample(p1.individuals,Nmigrants1_1));
+for (migrant in migrants1_1)
+	{
+		p1.takeMigrants(migrants1_1);
+	}
+
+rate1_3=0.0000221178;
+Nmigrants1_3=rpois(1,nIndividuals1*rate1_3); //1
+migrants1_3=(sample(p1.individuals,Nmigrants1_3));
+for (migrant in migrants1_3)
+	{
+		p3.takeMigrants(migrants1_3);
+	}
+rate1_9=0.0000006018459;
+Nmigrants1_9=rpois(1,nIndividuals1*rate1_9); //1
+migrants1_9=(sample(p1.individuals,Nmigrants1_9));
+for (migrant in migrants1_9)
+	{
+		p9.takeMigrants(migrants1_9);
+	}
+rate1_6=0.0000990036;
+Nmigrants1_6=rpois(1,nIndividuals1*rate1_6); //1
+migrants1_6=(sample(p1.individuals,Nmigrants1_6));
+for (migrant in migrants1_6)
+	{
+		p6.takeMigrants(migrants1_6);
+	}
+rate1_11=0.0000168517;
+Nmigrants1_11=rpois(1,nIndividuals1*rate1_11); //1
+migrants1_11=(sample(p1.individuals,Nmigrants1_11));
+for (migrant in migrants1_11)
+	{
+		p11.takeMigrants(migrants1_11);
+	}
+rate1_7=0.0000091781;
+Nmigrants1_7=rpois(1,nIndividuals1*rate1_7); //1
+migrants1_7=(sample(p1.individuals,Nmigrants1_7));
+for (migrant in migrants1_7)
+	{
+		p7.takeMigrants(migrants1_7);
+	}
+rate1_8=0.0000962953;
+Nmigrants1_8=rpois(1,nIndividuals1*rate1_8); //1
+migrants1_8=(sample(p1.individuals,Nmigrants1_8));
+for (migrant in migrants1_8)
+	{
+		p8.takeMigrants(migrants1_8);
+	}
+rate1_10=0.0000009027688;
+Nmigrants1_10=rpois(1,nIndividuals1*rate1_10); //1
+migrants1_10=(sample(p1.individuals,Nmigrants1_10));
+for (migrant in migrants1_10)
+	{
+		p10.takeMigrants(migrants1_10);
+	}}
+else{
+	print("P1 EXTINCT"+ " in Generation "+ sim.generation);}
+
+
+migrants3=p3.individualCount;
+
+rate3_1=0.0009876847;
+nIndividuals3 = sum(p3.individualCount);
+if (sum(nIndividuals3)>0) {
+Nmigrants3_1=rpois(1,nIndividuals3*rate3_1);
+migrants3_1=(sample(p3.individuals,Nmigrants3_1));
+for (migrant in migrants3_1)
+	{
+		p1.takeMigrants(migrants3_1);
+	}
+
+rate3_3=0.0066145;
+Nmigrants3_3=rpois(1,nIndividuals3*rate3_3);
+migrants3_3=(sample(p3.individuals,Nmigrants3_3));
+for (migrant in migrants3_3)
+	{
+		p3.takeMigrants(migrants3_3);
+	}
+
+rate3_11=0.0038448;
+Nmigrants3_11=rpois(1,nIndividuals3*rate3_11);
+migrants3_11=(sample(p3.individuals,Nmigrants3_11));
+for (migrant in migrants3_11)
+	{
+		p11.takeMigrants(migrants3_11);
+	}
+
+rate3_9=0.0000073892;
+Nmigrants3_9=rpois(1,nIndividuals3*rate3_9);
+migrants3_9=(sample(p3.individuals,Nmigrants3_9));
+for (migrant in migrants3_9)
+	{
+		p9.takeMigrants(migrants3_9);
+	}
+	
+rate3_6=0.0003029557;
+Nmigrants3_6=rpois(1,nIndividuals3*rate3_6);
+migrants3_6=(sample(p3.individuals,Nmigrants3_6));
+for (migrant in migrants3_6)
+	{
+		p6.takeMigrants(migrants3_6);
+	}
+
+rate3_8=0.0001625616;
+Nmigrants3_8=rpois(1,nIndividuals3*rate3_8);
+migrants3_8=(sample(p3.individuals,Nmigrants3_8));
+for (migrant in migrants3_8)
+	{
+		p8.takeMigrants(migrants3_8);
+	}
+	
+rate3_7=0.0001133005;
+Nmigrants3_7=rpois(1,nIndividuals3*rate3_7);
+migrants3_7=(sample(p3.individuals,Nmigrants3_7));
+for (migrant in migrants3_7)
+	{
+		p7.takeMigrants(migrants3_7);
+	}
+
+rate3_10=0.0000086207;
+Nmigrants3_10=rpois(1,nIndividuals3*rate3_10);
+migrants3_10=(sample(p3.individuals,Nmigrants3_10));
+for (migrant in migrants3_10)
+	{
+		p10.takeMigrants(migrants3_10);
+	}}
+else{
+	print("P3 EXTINCT"+ " in Generation "+ sim.generation);}
+
+migrants4=p4.individualCount;
+
+rate4_9=0.0002587242;
+nIndividuals4 = sum(p4.individualCount);
+if (sum(nIndividuals4)>0) {
+Nmigrants4_9=rpois(1,nIndividuals4*rate4_9);
+migrants4_9=(sample(p4.individuals,Nmigrants4_9));
+for (migrant in migrants4_9)
+	{
+		p9.takeMigrants(migrants4_9);
+	}
+
+rate4_1=0.0001738626;
+Nmigrants4_1=rpois(1,nIndividuals4*rate4_1);
+migrants4_1=(sample(p4.individuals,Nmigrants4_1));
+for (migrant in migrants4_1)
+	{
+		p1.takeMigrants(migrants4_1);
+	}
+
+rate4_3=0.0001241876;
+Nmigrants4_3=rpois(1,nIndividuals4*rate4_3);
+migrants4_3=(sample(p4.individuals,Nmigrants4_3));
+for (migrant in migrants4_3)
+	{
+		p3.takeMigrants(migrants4_3);
+	}
+rate4_11=0.0005878213;
+Nmigrants4_11=rpois(1,nIndividuals4*rate4_11);
+migrants4_11=(sample(p4.individuals,Nmigrants4_11));
+for (migrant in migrants4_11)
+	{
+		p11.takeMigrants(migrants4_11);
+	}
+
+rate4_8=0.0000331167;
+Nmigrants4_8=rpois(1,nIndividuals4*rate4_8);
+migrants4_8=(sample(p4.individuals,Nmigrants4_8));
+for (migrant in migrants4_8)
+	{
+		p8.takeMigrants(migrants4_8);
+	}
+rate4_7=0.0010825;
+Nmigrants4_7=rpois(1,nIndividuals4*rate4_7);
+migrants4_7=(sample(p4.individuals,Nmigrants4_7));
+for (migrant in migrants4_7)
+	{
+		p7.takeMigrants(migrants4_7);
+	}
+rate4_6=0.0000620938;
+Nmigrants4_6=rpois(1,nIndividuals4*rate4_6);
+migrants4_6=(sample(p4.individuals,Nmigrants4_6));
+for (migrant in migrants4_6)
+	{
+		p6.takeMigrants(migrants4_6);
+	}
+
+rate4_4=0.0000020698;
+Nmigrants4_4=rpois(1,nIndividuals4*rate4_4);
+migrants4_4=(sample(p4.individuals,Nmigrants4_4));
+for (migrant in migrants4_4)
+	{
+		p4.takeMigrants(migrants4_4);
+	}
+rate4_10=0.0000662334;
+Nmigrants4_10=rpois(1,nIndividuals4*rate4_10);
+migrants4_10=(sample(p4.individuals,Nmigrants4_10));
+for (migrant in migrants4_10)
+	{
+		p10.takeMigrants(migrants4_10);
+	}}
+	else{
+	print("P4 EXTINCT"+ " in Generation "+ sim.generation);}
+
+migrants5=p5.individualCount;
+
+rate5_9=0.0000197044;
+nIndividuals5 = sum(p5.individualCount);
+if (sum(nIndividuals5)>0) {
+Nmigrants5_9=rpois(1,nIndividuals5*rate5_9);
+migrants5_9=(sample(p5.individuals,Nmigrants5_9));
+for (migrant in migrants5_9)
+	{
+		p9.takeMigrants(migrants5_9);
+	}
+rate5_3=0.000401126;
+Nmigrants5_3=rpois(1,nIndividuals5*rate5_3);
+migrants5_3=(sample(p5.individuals,Nmigrants5_3));
+for (migrant in migrants5_3)
+	{
+		p3.takeMigrants(migrants5_3);
+	}
+rate5_6=0.0002364532;
+Nmigrants5_6=rpois(1,nIndividuals5*rate5_6);
+migrants5_6=(sample(p5.individuals,Nmigrants5_6));
+for (migrant in migrants5_6)
+	{
+		p6.takeMigrants(migrants5_6);
+	}
+rate5_8=0.000070373;
+Nmigrants5_8=rpois(1,nIndividuals5*rate5_8);
+migrants5_8=(sample(p5.individuals,Nmigrants5_8));
+for (migrant in migrants5_8)
+	{
+		p8.takeMigrants(migrants5_8);
+	}
+	
+rate5_1=0.0006460239;
+Nmigrants5_1=rpois(1,nIndividuals5*rate5_1);
+migrants5_1=(sample(p5.individuals,Nmigrants5_1));
+for (migrant in migrants5_1)
+	{
+		p1.takeMigrants(migrants5_1);
+	}
+rate5_11=0.0022407;
+Nmigrants5_11=rpois(1,nIndividuals5*rate5_11);
+migrants5_11=(sample(p5.individuals,Nmigrants5_11));
+for (migrant in migrants5_11)
+	{
+		p11.takeMigrants(migrants5_11);
+	}
+rate5_7=0.0002983814;
+Nmigrants5_7=rpois(1,nIndividuals5*rate5_7);
+migrants5_7=(sample(p5.individuals,Nmigrants5_7));
+for (migrant in migrants5_7)
+	{
+		p7.takeMigrants(migrants5_7);
+	}
+	
+rate5_10=0.0000267417;
+Nmigrants5_10=rpois(1,nIndividuals5*rate5_10);
+migrants5_10=(sample(p5.individuals,Nmigrants5_10));
+for (migrant in migrants5_10)
+	{
+		p10.takeMigrants(migrants5_10);
+	}}
+	else{
+	print("P5 EXTINCT"+ " in Generation "+ sim.generation);}
+
+migrants6=p6.individualCount;
+
+rate6_10=0.000000974181;
+nIndividuals6 = sum(p6.individualCount);
+if (sum(nIndividuals6)>0) {
+Nmigrants6_10=rpois(1,nIndividuals6*rate6_10);
+migrants6_10=(sample(p6.individuals,Nmigrants6_10));
+for (migrant in migrants6_10)
+	{
+		p10.takeMigrants(migrants6_10);
+	}
+
+rate6_7=0.0000183471;
+Nmigrants6_7=rpois(1,nIndividuals6*rate6_7);
+migrants6_7=(sample(p6.individuals,Nmigrants6_7));
+for (migrant in migrants6_7)
+	{
+		p7.takeMigrants(migrants6_7);
+	}
+rate6_9=0.0000022731;
+Nmigrants6_9=rpois(1,nIndividuals6*rate6_9);
+migrants6_9=(sample(p6.individuals,Nmigrants6_9));
+for (migrant in migrants6_9)
+	{
+		p9.takeMigrants(migrants6_9);
+	}
+rate6_6=0.0003252141;
+Nmigrants6_6=rpois(1,nIndividuals6*rate6_6);
+migrants6_6=(sample(p6.individuals,Nmigrants6_6));
+for (migrant in migrants6_6)
+	{
+		p6.takeMigrants(migrants6_6);
+	}
+rate6_3=0.000080857;
+Nmigrants6_3=rpois(1,nIndividuals6*rate6_3);
+migrants6_3=(sample(p6.individuals,Nmigrants6_3));
+for (migrant in migrants6_3)
+	{
+		p3.takeMigrants(migrants6_3);
+	}
+rate6_11=0.0002243863;
+Nmigrants6_11=rpois(1,nIndividuals6*rate6_11);
+migrants6_11=(sample(p6.individuals,Nmigrants6_11));
+for (migrant in migrants6_11)
+	{
+		p11.takeMigrants(migrants6_11);
+	}
+rate6_1=0.0017321;
+Nmigrants6_1=rpois(1,nIndividuals6*rate6_1);
+migrants6_1=(sample(p6.individuals,Nmigrants6_1));
+for (migrant in migrants6_1)
+	{
+		p1.takeMigrants(migrants6_1);
+	}
+rate6_8=0.0000962816;
+Nmigrants6_8=rpois(1,nIndividuals6*rate6_8);
+migrants6_8=(sample(p6.individuals,Nmigrants6_8));
+for (migrant in migrants6_8)
+	{
+		p8.takeMigrants(migrants6_8);
+	}}
+	else{
+	print("P6 EXTINCT"+ " in Generation "+ sim.generation);}
+
+
+
+migrants7=p7.individualCount;
+
+rate7_10=0.0000262408;
+nIndividuals7 = sum(p7.individualCount);
+if (sum(nIndividuals7)>0) {
+Nmigrants7_10=rpois(1,nIndividuals7*rate7_10);
+migrants7_10=(sample(p7.individuals,Nmigrants7_10));
+for (migrant in migrants7_10)
+	{
+		p10.takeMigrants(migrants7_10);
+	}
+rate7_7=0.0097139;
+Nmigrants7_7=rpois(1,nIndividuals7*rate7_7);
+migrants7_7=(sample(p7.individuals,Nmigrants7_7));
+for (migrant in migrants7_7)
+	{
+		p7.takeMigrants(migrants7_7);
+	}
+rate7_6=0.0001467098;
+Nmigrants7_6=rpois(1,nIndividuals7*rate7_6);
+migrants7_6=(sample(p7.individuals,Nmigrants7_6));
+for (migrant in migrants7_6)
+	{
+		p6.takeMigrants(migrants7_6);
+	}
+rate7_9=0.0000584454;
+Nmigrants7_9=rpois(1,nIndividuals7*rate7_9);
+migrants7_9=(sample(p7.individuals,Nmigrants7_9));
+for (migrant in migrants7_9)
+	{
+		p9.takeMigrants(migrants7_9);
+	}
+rate7_1=0.0003959971;
+Nmigrants7_1=rpois(1,nIndividuals7*rate7_1);
+migrants7_1=(sample(p7.individuals,Nmigrants7_1));
+for (migrant in migrants7_1)
+	{
+		p1.takeMigrants(migrants7_1);
+	}
+rate7_11=0.0012798;
+Nmigrants7_11=rpois(1,nIndividuals7*rate7_11);
+migrants7_11=(sample(p7.individuals,Nmigrants7_11));
+for (migrant in migrants7_11)
+	{
+		p11.takeMigrants(migrants7_11);
+	}
+rate7_3=0.0002850702;
+Nmigrants7_3=rpois(1,nIndividuals7*rate7_3);
+migrants7_3=(sample(p7.individuals,Nmigrants7_3));
+for (migrant in migrants7_3)
+	{
+		p3.takeMigrants(migrants7_3);
+	}
+rate7_8=0.0000906499;
+Nmigrants7_8=rpois(1,nIndividuals7*rate7_8);
+migrants7_8=(sample(p7.individuals,Nmigrants7_8));
+for (migrant in migrants7_8)
+	{
+		p8.takeMigrants(migrants7_8);
+	}
+		}
+	else{
+	print("P7 EXTINCT"+ " in Generation "+ sim.generation);}
+	
+migrants8=p8.individualCount;
+
+rate8_3=0.0001110357;
+nIndividuals8 = sum(p8.individualCount);
+if (sum(nIndividuals8)>0) {
+Nmigrants8_3=rpois(1,nIndividuals8*rate8_3);
+migrants8_3=(sample(p8.individuals,Nmigrants8_3));
+for (migrant in migrants8_3)
+	{
+		p3.takeMigrants(migrants8_3);
+	}
+rate8_6=0.0007948747;
+Nmigrants8_6=rpois(1,nIndividuals8*rate8_6);
+migrants8_6=(sample(p8.individuals,Nmigrants8_6));
+for (migrant in migrants8_6)
+	{
+		p6.takeMigrants(migrants8_6);
+	}
+rate8_8=0.0020383;
+Nmigrants8_8=rpois(1,nIndividuals8*rate8_8);
+migrants8_8=(sample(p8.individuals,Nmigrants8_8));
+for (migrant in migrants8_8)
+	{
+		p8.takeMigrants(migrants8_8);
+	}
+rate8_1=0.0014443;
+Nmigrants8_1=rpois(1,nIndividuals8*rate8_1);
+migrants8_1=(sample(p8.individuals,Nmigrants8_1));
+for (migrant in migrants8_1)
+	{
+		p8.takeMigrants(migrants8_1);
+	}
+rate8_11=0.0004551583;
+Nmigrants8_11=rpois(1,nIndividuals8*rate8_11);
+migrants8_11=(sample(p8.individuals,Nmigrants8_11));
+for (migrant in migrants8_11)
+	{
+		p11.takeMigrants(migrants8_11);
+	}
+rate8_7=0.0000295214;
+Nmigrants8_7=rpois(1,nIndividuals8*rate8_7);
+migrants8_7=(sample(p8.individuals,Nmigrants8_7));
+for (migrant in migrants8_7)
+	{
+		p7.takeMigrants(migrants8_7);
+	}
+rate8_9=0.0000026437;
+Nmigrants8_9=rpois(1,nIndividuals8*rate8_9);
+migrants8_9=(sample(p8.individuals,Nmigrants8_9));
+for (migrant in migrants8_9)
+	{
+		p9.takeMigrants(migrants8_9);
+	}
+rate8_10=0.0000013219;
+Nmigrants8_10=rpois(1,nIndividuals8*rate8_10);
+migrants8_10=(sample(p8.individuals,Nmigrants8_10));
+for (migrant in migrants8_10)
+	{
+		p10.takeMigrants(migrants8_10);
+	}
+	}
+		else{
+	print("P8 EXTINCT"+ " in Generation "+ sim.generation);}
+migrants9=p9.individualCount;
+
+rate9_10=0.0000816228;
+nIndividuals9 = sum(p9.individualCount);
+if (sum(nIndividuals9)>0) {
+Nmigrants9_10=rpois(1,nIndividuals9*rate9_10);
+migrants9_10=(sample(p9.individuals,Nmigrants9_10));
+for (migrant in migrants9_10)
+	{
+		p10.takeMigrants(migrants9_10);
+	}
+rate9_7=0.0007713929;
+Nmigrants9_7=rpois(1,nIndividuals9*rate9_7);
+migrants9_7=(sample(p9.individuals,Nmigrants9_7));
+for (migrant in migrants9_7)
+	{
+		p7.takeMigrants(migrants9_7);
+	}
+rate9_9=0.0007265579;
+Nmigrants9_9=rpois(1,nIndividuals9*rate9_9);
+migrants9_9=(sample(p9.individuals,Nmigrants9_9));
+for (migrant in migrants9_9)
+	{
+		p9.takeMigrants(migrants9_9);
+	}
+rate9_6=0.0001448517;
+Nmigrants9_6=rpois(1,nIndividuals9*rate9_6);
+migrants9_6=(sample(p9.individuals,Nmigrants9_6));
+for (migrant in migrants9_6)
+	{
+		p6.takeMigrants(migrants9_6);
+	}
+rate9_1=0.0003989171;
+Nmigrants9_1=rpois(1,nIndividuals9*rate9_1);
+migrants9_1=(sample(p9.individuals,Nmigrants9_1));
+for (migrant in migrants9_1)
+	{
+		p1.takeMigrants(migrants9_1);
+	}
+rate9_3=0.0002299234;
+Nmigrants9_3=rpois(1,nIndividuals9*rate9_3);
+migrants9_3=(sample(p9.individuals,Nmigrants9_3));
+for (migrant in migrants9_3)
+	{
+		p3.takeMigrants(migrants9_3);
+	}
+rate9_11=0.0012255;
+Nmigrants9_11=rpois(1,nIndividuals9*rate9_11);
+migrants9_11=(sample(p9.individuals,Nmigrants9_11));
+for (migrant in migrants9_11)
+	{
+		p11.takeMigrants(migrants9_11);
+	}
+rate9_8=0.0000758747;
+Nmigrants9_8=rpois(1,nIndividuals9*rate9_8);
+migrants9_8=(sample(p9.individuals,Nmigrants9_8));
+for (migrant in migrants9_8)
+	{
+		p8.takeMigrants(migrants9_8);
+	}
+rate9_4=0.0000011496;
+Nmigrants9_4=rpois(1,nIndividuals9*rate9_4);
+migrants9_4=(sample(p9.individuals,Nmigrants9_4));
+for (migrant in migrants9_4)
+	{
+		p4.takeMigrants(migrants9_4);
+	}
+rate9_12=0.0000011496;
+Nmigrants9_12=rpois(1,nIndividuals9*rate9_12);
+migrants9_12=(sample(p9.individuals,Nmigrants9_12));
+for (migrant in migrants9_12)
+	{
+		p12.takeMigrants(migrants9_12);
+	}
+	}
+	else{
+	print("P9 EXTINCT"+ " in Generation "+ sim.generation);}
+	
+migrants10=p10.individualCount;
+
+rate10_10=0.0001475072;
+nIndividuals10 = sum(p10.individualCount);
+if (sum(nIndividuals10)>0) {
+Nmigrants10_10=rpois(1,nIndividuals10*rate10_10);
+migrants10_10=(sample(p10.individuals,Nmigrants10_10));
+for (migrant in migrants10_10)
+	{
+		p10.takeMigrants(migrants10_10);
+	}
+rate10_7=0.0003281443;
+Nmigrants10_7=rpois(1,nIndividuals10*rate10_7);
+migrants10_7=(sample(p10.individuals,Nmigrants10_7));
+for (migrant in migrants10_7)
+	{
+		p7.takeMigrants(migrants10_7);
+	}
+rate10_6=0.000203907;
+Nmigrants10_6=rpois(1,nIndividuals10*rate10_6);
+migrants10_6=(sample(p10.individuals,Nmigrants10_6));
+for (migrant in migrants10_6)
+	{
+		p6.takeMigrants(migrants10_6);
+	}
+rate10_1=0.0005210079;
+Nmigrants10_1=rpois(1,nIndividuals10*rate10_1);
+migrants10_1=(sample(p10.individuals,Nmigrants10_1));
+for (migrant in migrants10_1)
+	{
+		p1.takeMigrants(migrants10_1);
+	}
+rate10_11=0.0009311883;
+Nmigrants10_11=rpois(1,nIndividuals10*rate10_11);
+migrants10_11=(sample(p10.individuals,Nmigrants10_11));
+for (migrant in migrants10_11)
+	{
+		p11.takeMigrants(migrants10_11);
+	}
+rate10_3=0.0002421642;
+Nmigrants10_3=rpois(1,nIndividuals10*rate10_3);
+migrants10_3=(sample(p10.individuals,Nmigrants10_3));
+for (migrant in migrants10_3)
+	{
+		p3.takeMigrants(migrants10_3);
+	}
+rate10_9=0.0000106489;
+Nmigrants10_9=rpois(1,nIndividuals10*rate10_9);
+migrants10_9=(sample(p10.individuals,Nmigrants10_9));
+for (migrant in migrants10_9)
+	{
+		p9.takeMigrants(migrants10_9);
+	}
+rate10_8=0.0000552166;
+Nmigrants10_8=rpois(1,nIndividuals10*rate10_8);
+migrants10_8=(sample(p10.individuals,Nmigrants10_8));
+for (migrant in migrants10_8)
+	{
+		p8.takeMigrants(migrants10_8);
+	}
+	}
+		else{
+	print("P10 EXTINCT"+ " in Generation "+ sim.generation);}
+
+migrants11=p11.individualCount;
+
+rate11_10=0.0000045039;
+nIndividuals11 = sum(p11.individualCount);
+if (sum(nIndividuals11)>0) {
+Nmigrants11_10=rpois(1,nIndividuals11*rate11_10);
+migrants11_10=(sample(p11.individuals,Nmigrants11_10));
+for (migrant in migrants11_10)
+	{
+		p10.takeMigrants(migrants11_10);
+	}
+rate11_7=0.0000931738;
+Nmigrants11_7=rpois(1,nIndividuals11*rate11_7);
+migrants11_7=(sample(p11.individuals,Nmigrants11_7));
+for (migrant in migrants11_7)
+	{
+		p7.takeMigrants(migrants11_7);
+	}
+rate11_6=0.0000757213;
+Nmigrants11_6=rpois(1,nIndividuals11*rate11_6);
+migrants11_6=(sample(p11.individuals,Nmigrants11_6));
+for (migrant in migrants11_6)
+	{
+		p6.takeMigrants(migrants11_6);
+	}
+rate11_1=0.0001382125;
+Nmigrants11_1=rpois(1,nIndividuals11*rate11_1);
+migrants11_1=(sample(p11.individuals,Nmigrants11_1));
+for (migrant in migrants11_1)
+	{
+		p1.takeMigrants(migrants11_1);
+	}
+rate11_9=0.0000323716;
+Nmigrants11_9=rpois(1,nIndividuals11*rate11_9);
+migrants11_9=(sample(p11.individuals,Nmigrants11_9));
+for (migrant in migrants11_9)
+	{
+		p9.takeMigrants(migrants11_9);
+	}
+rate11_11=0.0186767;
+Nmigrants11_11=rpois(1,nIndividuals11*rate11_11);
+migrants11_11=(sample(p11.individuals,Nmigrants11_11));
+for (migrant in migrants11_11)
+	{
+		p11.takeMigrants(migrants11_11);
+	}
+rate11_3=0.0001089374;
+Nmigrants11_3=rpois(1,nIndividuals11*rate11_3);
+migrants11_3=(sample(p11.individuals,Nmigrants11_3));
+for (migrant in migrants11_3)
+	{
+		p3.takeMigrants(migrants11_3);
+	}
+rate11_8=0.0000154821;
+Nmigrants11_8=rpois(1,nIndividuals11*rate11_8);
+migrants11_8=(sample(p11.individuals,Nmigrants11_8));
+for (migrant in migrants11_8)
+	{
+		p8.takeMigrants(migrants11_8);
+	}	
+	}
+		else{
+	print("P11 EXTINCT"+ " in Generation "+ sim.generation);}
+migrants12=p12.individualCount;
+
+rate12_10=0.0000106441;
+nIndividuals12 = sum(p12.individualCount);
+if (sum(nIndividuals12)>0) {
+Nmigrants12_10=rpois(1,nIndividuals12*rate12_10);
+migrants12_10=(sample(p12.individuals,Nmigrants12_10));
+for (migrant in migrants12_10)
+	{
+		p10.takeMigrants(migrants12_10);
+	}
+rate12_7=0.0002388545;
+Nmigrants12_7=rpois(1,nIndividuals12*rate12_7);
+migrants12_7=(sample(p12.individuals,Nmigrants12_7));
+for (migrant in migrants12_7)
+	{
+		p7.takeMigrants(migrants12_7);
+	}
+rate12_9=0.0000298036;
+Nmigrants12_9=rpois(1,nIndividuals12*rate12_9);
+migrants12_9=(sample(p12.individuals,Nmigrants12_9));
+for (migrant in migrants12_9)
+	{
+		p9.takeMigrants(migrants12_9);
+	}
+rate12_6=0.0000046834;
+Nmigrants12_6=rpois(1,nIndividuals12*rate12_6);
+migrants12_6=(sample(p12.individuals,Nmigrants12_6));
+for (migrant in migrants12_6)
+	{
+		p6.takeMigrants(migrants12_6);
+	}
+rate12_1=0.0000059607;
+Nmigrants12_1=rpois(1,nIndividuals12*rate12_1);
+migrants12_1=(sample(p12.individuals,Nmigrants12_1));
+for (migrant in migrants12_1)
+	{
+		p1.takeMigrants(migrants12_1);
+	}
+rate12_3=0.0000080895;
+Nmigrants12_3=rpois(1,nIndividuals12*rate12_3);
+migrants12_3=(sample(p12.individuals,Nmigrants12_3));
+for (migrant in migrants12_3)
+	{
+		p3.takeMigrants(migrants12_3);
+	}
+rate12_11=0.0000387447;
+Nmigrants12_11=rpois(1,nIndividuals12*rate12_11);
+migrants12_11=(sample(p12.individuals,Nmigrants12_11));
+for (migrant in migrants12_11)
+	{
+		p11.takeMigrants(migrants12_11);
+	}
+rate12_4=0.0000017031;
+Nmigrants12_4=rpois(1,nIndividuals12*rate12_4);
+migrants12_4=(sample(p12.individuals,Nmigrants12_4));
+for (migrant in migrants12_4)
+	{
+		p4.takeMigrants(migrants12_4);
+	}
+rate12_12=0.0001026095;
+Nmigrants12_12=rpois(1,nIndividuals12*rate12_12);
+migrants12_12=(sample(p12.individuals,Nmigrants12_12));
+for (migrant in migrants12_12)
+	{
+		p12.takeMigrants(migrants12_12);
+	}
+rate12_8=0.0000012773;
+Nmigrants12_8=rpois(1,nIndividuals12*rate12_8);
+migrants12_8=(sample(p12.individuals,Nmigrants12_8));
+for (migrant in migrants12_8)
+	{
+		p8.takeMigrants(migrants12_8);
+	}
+	}
+		else{
+	print("P12 EXTINCT"+ " in Generation "+ sim.generation);}
+ }
+
+
+
+1:20000 late() {     //modelling a burnin og 20000 and then from last ice age 8000 years ago
+	//Summary statistics are estimated every x generations
+	if (sim.generation % 1000 != 0)
+		return;
+	total = 0;
+	comp_i = 0;
+	n = 0;
+	a1 = 0;
+	a2 = 0;
+	
+	//look at all inds
+	samp = p1.genomes;
+	
+	//Estimates mean number of pairwise differences
+	for(i in samp){
+		xi = i.mutations;
+		j = i;
+		for(j in samp){
+			if(j != i){
+				xj = j.mutations;
+				shared = sum(match(xi, xj) >= 0);
+				unshared = xi.size() + xj.size() - shared;
+				total = total + unshared;
+				comp_i = comp_i + 1;
+			}
+		}
+		
+		n = n + 1;
+		
+		if (n < size(samp)){
+			a1 = a1+1/n;
+			a2 = a2+1/n^2;
+		}
+	}
+	
+	total = total / comp_i;
+	pi = total / (sim.chromosome.lastPosition + 1);
+	S = size(unique(samp.mutations));
+	
+	//Estimates Tajima's D
+	b1 = (n+1)/(3*(n-1));
+	b2 = 2*(n^2+n+3)/(9*n*(n-1));
+	c1 = b1-1/a1;
+	c2 = b2-(n+2)/(a1*n)+(a2/a1^2);
+	e1 = c1/a1;
+	e2 = c2/(a1^2+a2);
+	
+	D = (total-S/a1)/(e1*S+e2*S*(S-1))^0.5;
+	
+	//Prints out the results
+	cat("\n" + "Generation = " +(sim.generation-1)+" Pi = "+pi+" D = "+D+"\n");  //here I have generation -1 to spot beginning and end of each generation output!
+	//line = paste("Generation = " +(sim.generation-1)+" Pi = "+pi+" D = "+D+"\n");
+	//writeFile("./test" + iter  + ".txt", line, append=T);
+	
+	// Calculate mean nucleotide heterozygosity across the population, this isn't relevant for microsats really, so remove
+	total = 0.0;
+	for (ind in p1.individuals)
+	{
+		// Calculate the nucleotide heterozygosity of this individual
+		muts0 = ind.genomes[0].mutations;
+		muts1 = ind.genomes[1].mutations;
+		
+		// Count the shared mutations
+		shared_count = sum(match(muts0, muts1) >= 0);
+		
+		// All remaining mutations are unshared (i.e. heterozygous)
+		unshared_count = muts0.size() + muts1.size() - 2 * shared_count;
+		
+		// pi is the mean heterozygosity across the chromosome
+		pi_ind = unshared_count / (sim.chromosome.lastPosition + 1);
+		total = total + pi_ind;
+	}
+	
+	pi = total / p1.individuals.size();
+	
+	cat("Mean nucleotide heterozygosity = " + pi + "\n");
+	cat("Pop size = " + p1.individuals.size() + "\n");
+
+	// print frequency information for each microsatellite site
+	all_msats = sim.mutationsOfType(m2);
+	
+	for (pos in sort(msatPositions))
+	{
+		catn("Microsatellite at " + pos + ":");
+		
+		msatsAtPos = all_msats[all_msats.position == pos];
+		
+		for (msat in sortBy(msatsAtPos, "tag"))
+			catn("   variant with " + msat.tag + " repeats: " +
+			sim.mutationFrequencies(NULL, msat));
+	}
+	cat(" Ar ="+(size(sim.mutationsOfType(m2))/20)+"\n");
+
+	// get output for number of inds sampled, i.e. 2xinds because its haploid genomes
+	p1Individuals = p1.individuals;
+	if (size(p1.individuals)>50)	{
+		sampledIndividuals = sample(p1Individuals, 50);
+		sampledIndividuals.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop1_outputSample1"    + iter  + ".txt",append=T);	}
+	else	{
+		if (size(p1.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		sampledIndividuals = sample(p1Individuals, 50,replace=T);
+		sampledIndividuals.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop1_outputSample1"   +".txt",append=T);	}}
+	//p1.outputSample(956, filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/Zostera_microsat_2bottlenecks_outputSample1" + iter  + ".txt",append=T); //this is sample size in G
+	//get mutations of microsats
+	sim.outputMutations(sim.mutationsOfType(m2), filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_outputSample1"    +".txt",append=T);
+	
+	//get pop size and age of oldest ind
+	inds = p1.individuals;
+	ages = inds.age;
+	mortality = M[ages];
+	survival = 1 - mortality;
+	inds.fitnessScaling = survival;
+	
+	age_dist=sort(p1.individuals.age);
+	all=sum(age_dist>=0);
+	zero=sum(p1.individuals.age==0);
+	ten=sum(age_dist <= 10);
+	twenty=(sum(age_dist <=20))-ten;
+	thirty=(sum(age_dist <=30))-ten-twenty;
+	forty=(sum(age_dist <=40))-ten-twenty-thirty;
+	fifty=(sum(age_dist <=50))-ten-twenty-thirty-forty;
+	sixty=(sum(age_dist <=60))-ten-twenty-thirty-forty-fifty;
+	seventy=(sum(age_dist <=70))-ten-twenty-thirty-forty-fifty-sixty;
+	eighty=(sum(age_dist <=80))-ten-twenty-thirty-forty-fifty-sixty-seventy;
+	ninty=(sum(age_dist <=90))-ten-twenty-thirty-forty-fifty-sixty-seventy-eighty;
+	hundred=(sum(age_dist <=100))-ten-twenty-thirty-forty-fifty-sixty-seventy-eighty-ninty;
+	
+	clonal_0=sum(p1.individuals.tag==0);
+	clonal_2=sum(p1.individuals.tag==2);
+	clonal_zero_0=sum((p1.individuals.age ==0) & (p1.individuals.tag==0));
+	clonal_zero_2=sum((p1.individuals.age ==0) & (p1.individuals.tag==2));
+	clonal_zero=clonal_zero_0 + clonal_zero_2;
+	clonal_ten_0 =(sum((p1.individuals.age <=10) & (p1.individuals.tag==0)))/ten;
+	clonal_ten_2 =(sum((p1.individuals.age <=10) & (p1.individuals.tag==2)))/ten;
+	clonal_ten =clonal_ten_0 + clonal_ten_2;
+	clonal_twenty =(sum((p1.individuals.age <=20) & (p1.individuals.age >10)& (p1.individuals.tag==2)))/twenty;
+	clonal_thirty =(sum((p1.individuals.age <=30) & (p1.individuals.age >20)& (p1.individuals.tag==2)))/thirty;
+	clonal_forty =(sum((p1.individuals.age <=40) & (p1.individuals.age >30)& (p1.individuals.tag==2)))/forty;
+	clonal_fifty =(sum((p1.individuals.age <=50) & (p1.individuals.age >40)& (p1.individuals.tag==2)))/fifty;
+	clonal_sixty =(sum((p1.individuals.age<=60) & (p1.individuals.age >50)& (p1.individuals.tag==2)))/sixty;
+	clonal_seventy =(sum((p1.individuals.age <=70) & (p1.individuals.age >60)& (p1.individuals.tag==2)))/seventy;
+	clonal_eighty =(sum((p1.individuals.age <=80) & (p1.individuals.age >70)& (p1.individuals.tag==2)))/eighty;
+	clonal_ninty =(sum((p1.individuals.age <=90) & (p1.individuals.age >80)& (p1.individuals.tag==2)))/ninty;
+	clonal_hundred =(sum((p1.individuals.age <=100) & (p1.individuals.age >90)& (p1.individuals.tag==2)))/hundred;
+	
+	cat("Generation = " + sim.generation + " Pop size = " + size(inds) + " Max ind age = " + max(inds.age) + " Mean fitness = " + mean(survival) + " Percentage new recruits = " + zero/all*100 + " Percentage up to 10 = " + ten/all*100 + " Percentage up to 20 = " + twenty/all*100 + " Percentage up to 30 = " + thirty/all*100 + " Percentage up to 40 = " + forty/all*100 + " Percentage up to 50 = " + fifty/all*100 + " Percentage up to 60 = " + sixty/all*100 + " Percentage up to 70 = " + seventy/all*100 + " Percentage up to 80 = " + eighty/all*100 + " Percentage up to 90 = " + ninty/all*100 + " Percentage up to 100 = " + hundred/all*100+  "\n" +
+		" Proportion clonal_0 =" + (clonal_0)/size(inds)+ " Proportion clonal_2 =" + (clonal_2)/size(inds)+" Proportion clonal new recruits =" + clonal_zero/zero+ " (" + clonal_zero_0/zero + " + "+ clonal_zero_2/zero + ") " + " Clonal ten = "+ clonal_ten+ " (" + clonal_ten_0 + " + "+ clonal_ten_2 + ") " + " Clonal twenty = " +clonal_twenty+" Clonal thirty = " +clonal_thirty+ " Clonal forty = " +clonal_forty+" Clonal fifty = " +clonal_fifty+" Clonal sixty = " +clonal_sixty+" Clonal seventy = " +clonal_seventy+" Clonal eighty = " +clonal_eighty+" Clonal ninty = " +clonal_ninty+ " Clonal hundred = " +clonal_hundred+"\n");
+	//catn(" Individual Age " + p1.individuals.age + " SEX =tag1 =" + p1.individuals.tag+"\n");
+
+}
+
+20001:27000 late() {     //modelling a burnin og 20000 and then from last ice age 8000 years ago
+	//Summary statistics are estimated every x generations
+	if (sim.generation % 100 != 0) 
+		return;
+	total = 0;
+	comp_i = 0;
+	n = 0;
+	a1 = 0;
+	a2 = 0;
+	
+	samp = p1.genomes;
+	
+	//Estimates mean number of pairwise differences
+	for(i in samp){
+		xi = i.mutations;
+		j = i;
+		for(j in samp){
+			if(j != i){
+				xj = j.mutations;
+				shared = sum(match(xi, xj) >= 0);
+				unshared = xi.size() + xj.size() - shared;
+				total = total + unshared;
+				comp_i = comp_i + 1;
+			}
+		}
+		
+		n = n + 1;
+		
+		if (n < size(samp)){
+			a1 = a1+1/n;
+			a2 = a2+1/n^2;
+		}
+	}
+	
+	total = total / comp_i;
+	pi = total / (sim.chromosome.lastPosition + 1);
+	S = size(unique(samp.mutations));
+	
+	//Estimates Tajima's D
+	b1 = (n+1)/(3*(n-1));
+	b2 = 2*(n^2+n+3)/(9*n*(n-1));
+	c1 = b1-1/a1;
+	c2 = b2-(n+2)/(a1*n)+(a2/a1^2);
+	e1 = c1/a1;
+	e2 = c2/(a1^2+a2);
+	
+	D = (total-S/a1)/(e1*S+e2*S*(S-1))^0.5;
+	
+	//Prints out the results
+	cat("Generation = " +(sim.generation-1)+" Pi = "+pi+" D = "+D+"\n");
+	
+	// Calculate mean nucleotide heterozygosity across the population, this isn't relevant for microsats really, so remove
+	total = 0.0;
+	for (ind in p1.individuals)
+	{
+		// Calculate the nucleotide heterozygosity of this individual
+		muts0 = ind.genomes[0].mutations;
+		muts1 = ind.genomes[1].mutations;
+		
+		// Count the shared mutations
+		shared_count = sum(match(muts0, muts1) >= 0);
+		
+		// All remaining mutations are unshared (i.e. heterozygous)
+		unshared_count = muts0.size() + muts1.size() - 2 * shared_count;
+		
+		// pi is the mean heterozygosity across the chromosome
+		pi_ind = unshared_count / (sim.chromosome.lastPosition + 1);
+		total = total + pi_ind;
+	}
+	
+	pi = total / p1.individuals.size();
+	
+	cat("Mean nucleotide heterozygosity = " + pi + "\n");
+	cat("Pop size = " + p1.individuals.size() + "\n");
+	
+	// print frequency information for each microsatellite site
+	all_msats = sim.mutationsOfType(m2);
+	
+	for (pos in sort(msatPositions))
+	{
+		catn("Microsatellite at " + pos + ":");
+		
+		msatsAtPos = all_msats[all_msats.position == pos];
+		
+		for (msat in sortBy(msatsAtPos, "tag"))
+			catn("   variant with " + msat.tag + " repeats: " +
+			sim.mutationFrequencies(NULL, msat));
+	}
+	cat(" Ar ="+(size(sim.mutationsOfType(m2))/20)+"\n");
+	// get output for number of inds sampled, i.e. 2xinds because its haploid genomes
+	if (size(p1.individuals)>50)	{
+		p1Individuals = p1.individuals;
+		sampledIndividuals = sample(p1Individuals, 50);
+		sampledIndividuals.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop1_outputSample1"    + iter  + ".txt",append=T);	}
+	else	{
+	if (size(p1.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		p1Individuals = p1.individuals;
+		sampledIndividuals = sample(p1Individuals, 50,replace = T);
+		sampledIndividuals.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop1_outputSample1"    + iter  + ".txt",append=T);	}}
+	
+	//get mutations of microsats
+	sim.outputMutations(sim.mutationsOfType(m2),filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_outputSample1"     + iter  + ".txt",append=T);
+	
+	//get pop size and age of oldest ind
+	inds = p1.individuals;
+	ages = inds.age;
+	mortality = M[ages];
+	survival = 1 - mortality;
+	inds.fitnessScaling = survival;
+	
+	age_dist=sort(p1.individuals.age);
+	all=sum(age_dist>=0);
+	zero =all-(sum(age_dist > 0));
+	ten=sum(age_dist <= 10);
+	twenty=(sum(age_dist <=20))-ten;
+	thirty=(sum(age_dist <=30))-ten-twenty;
+	forty=(sum(age_dist <=40))-ten-twenty-thirty;
+	fifty=(sum(age_dist <=50))-ten-twenty-thirty-forty;
+	sixty=(sum(age_dist <=60))-ten-twenty-thirty-forty-fifty;
+	seventy=(sum(age_dist <=70))-ten-twenty-thirty-forty-fifty-sixty;
+	eighty=(sum(age_dist <=80))-ten-twenty-thirty-forty-fifty-sixty-seventy;
+	ninty=(sum(age_dist <=90))-ten-twenty-thirty-forty-fifty-sixty-seventy-eighty;
+	hundred=(sum(age_dist <=100))-ten-twenty-thirty-forty-fifty-sixty-seventy-eighty-ninty;
+	
+	clonal_0=sum(p1.individuals.tag==0);
+	clonal_2=sum(p1.individuals.tag==2);
+	clonal_zero_0=sum((p1.individuals.age ==0) & (p1.individuals.tag==0));
+	clonal_zero_2=sum((p1.individuals.age ==0) & (p1.individuals.tag==2));
+	clonal_zero=clonal_zero_0 + clonal_zero_2;
+	clonal_ten_0 =(sum((p1.individuals.age <=10) & (p1.individuals.tag==0)))/ten;
+	clonal_ten_2 =(sum((p1.individuals.age <=10) & (p1.individuals.tag==2)))/ten;
+	clonal_ten =clonal_ten_0 + clonal_ten_2;
+	clonal_twenty =(sum((p1.individuals.age <=20) & (p1.individuals.age >10)& (p1.individuals.tag==2)))/twenty;
+	clonal_thirty =(sum((p1.individuals.age <=30) & (p1.individuals.age >20)& (p1.individuals.tag==2)))/thirty;
+	clonal_forty =(sum((p1.individuals.age <=40) & (p1.individuals.age >30)& (p1.individuals.tag==2)))/forty;
+	clonal_fifty =(sum((p1.individuals.age <=50) & (p1.individuals.age >40)& (p1.individuals.tag==2)))/fifty;
+	clonal_sixty =(sum((p1.individuals.age<=60) & (p1.individuals.age >50)& (p1.individuals.tag==2)))/sixty;
+	clonal_seventy =(sum((p1.individuals.age <=70) & (p1.individuals.age >60)& (p1.individuals.tag==2)))/seventy;
+	clonal_eighty =(sum((p1.individuals.age <=80) & (p1.individuals.age >70)& (p1.individuals.tag==2)))/eighty;
+	clonal_ninty =(sum((p1.individuals.age <=90) & (p1.individuals.age >80)& (p1.individuals.tag==2)))/ninty;
+	clonal_hundred =(sum((p1.individuals.age <=100) & (p1.individuals.age >90)& (p1.individuals.tag==2)))/hundred;
+	
+	cat("Generation = " + sim.generation + " Pop size = " + size(inds) + " Max ind age = " + max(inds.age) + " Mean fitness = " + mean(survival) + " Percentage new recruits = " + zero/all*100 + " Percentage up to 10 = " + ten/all*100 + " Percentage up to 20 = " + twenty/all*100 + " Percentage up to 30 = " + thirty/all*100 + " Percentage up to 40 = " + forty/all*100 + " Percentage up to 50 = " + fifty/all*100 + " Percentage up to 60 = " + sixty/all*100 + " Percentage up to 70 = " + seventy/all*100 + " Percentage up to 80 = " + eighty/all*100 + " Percentage up to 90 = " + ninty/all*100 + " Percentage up to 100 = " + hundred/all*100+  "\n" +
+		" Proportion clonal_0 =" + (clonal_0)/size(inds)+ " Proportion clonal_2 =" + (clonal_2)/size(inds)+" Proportion clonal new recruits =" + clonal_zero/zero+ " (" + clonal_zero_0/zero + " + "+ clonal_zero_2/zero + ") " + " Clonal ten = "+ clonal_ten+ " (" + clonal_ten_0 + " + "+ clonal_ten_2 + ") " + " Clonal twenty = " +clonal_twenty+" Clonal thirty = " +clonal_thirty+ " Clonal forty = " +clonal_forty+" Clonal fifty = " +clonal_fifty+" Clonal sixty = " +clonal_sixty+" Clonal seventy = " +clonal_seventy+" Clonal eighty = " +clonal_eighty+" Clonal ninty = " +clonal_ninty+ " Clonal hundred = " +clonal_hundred+"\n");
+	//catn(" Individual Age " + p1.individuals.age + " SEX =tag1 =" + p1.individuals.tag+"\n");
+
+}
+
+
+27001:28000 late() {     //modelling a burnin og 20000 and then from last ice age 8000 years ago
+	//Summary statistics are estimated every x generations
+	if (sim.generation % 10 != 0) //probably change to eg 50
+		return;
+	total = 0;
+	comp_i = 0;
+	n = 0;
+	a1 = 0;
+	a2 = 0;
+	
+	//Uses a random set of 956 samples, i.e samples we took in G
+	samp = p1.genomes;
+	
+	//Estimates mean number of pairwise differences
+	for(i in samp){
+		xi = i.mutations;
+		j = i;
+		for(j in samp){
+			if(j != i){
+				xj = j.mutations;
+				shared = sum(match(xi, xj) >= 0);
+				unshared = xi.size() + xj.size() - shared;
+				total = total + unshared;
+				comp_i = comp_i + 1;
+			}
+		}
+		
+		n = n + 1;
+		
+		if (n < size(samp)){
+			a1 = a1+1/n;
+			a2 = a2+1/n^2;
+		}
+	}
+	
+	total = total / comp_i;
+	pi = total / (sim.chromosome.lastPosition + 1);
+	S = size(unique(samp.mutations));
+	
+	//Estimates Tajima's D
+	b1 = (n+1)/(3*(n-1));
+	b2 = 2*(n^2+n+3)/(9*n*(n-1));
+	c1 = b1-1/a1;
+	c2 = b2-(n+2)/(a1*n)+(a2/a1^2);
+	e1 = c1/a1;
+	e2 = c2/(a1^2+a2);
+	
+	D = (total-S/a1)/(e1*S+e2*S*(S-1))^0.5;
+	
+	//Prints out the results
+	cat("Generation = " +(sim.generation-1)+" Pi = "+pi+" D = "+D+"\n");
+	
+	// Calculate mean nucleotide heterozygosity across the population, this isn't relevant for microsats really, so remove
+	total = 0.0;
+	for (ind in p1.individuals)
+	{
+		// Calculate the nucleotide heterozygosity of this individual
+		muts0 = ind.genomes[0].mutations;
+		muts1 = ind.genomes[1].mutations;
+		
+		// Count the shared mutations
+		shared_count = sum(match(muts0, muts1) >= 0);
+		
+		// All remaining mutations are unshared (i.e. heterozygous)
+		unshared_count = muts0.size() + muts1.size() - 2 * shared_count;
+		
+		// pi is the mean heterozygosity across the chromosome
+		pi_ind = unshared_count / (sim.chromosome.lastPosition + 1);
+		total = total + pi_ind;
+	}
+	
+	pi = total / p1.individuals.size();
+	
+	cat("Mean nucleotide heterozygosity = " + pi + "\n");
+	cat("Pop size = " + p1.individuals.size() + "\n");
+	
+	// print frequency information for each microsatellite site
+	all_msats = sim.mutationsOfType(m2);
+	
+	for (pos in sort(msatPositions))
+	{
+		catn("Microsatellite at " + pos + ":");
+		
+		msatsAtPos = all_msats[all_msats.position == pos];
+		
+		for (msat in sortBy(msatsAtPos, "tag"))
+			catn("   variant with " + msat.tag + " repeats: " +
+			sim.mutationFrequencies(NULL, msat));
+	}
+	cat(" Ar ="+(size(sim.mutationsOfType(m2))/20)+"\n");
+	// get output for number of inds sampled, i.e. 2xinds because its haploid genomes
+	if (size(p1.individuals)>50)	{
+		p1Individuals = p1.individuals;
+		sampledIndividuals = sample(p1Individuals, 50);
+		sampledIndividuals.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop1_outputSample1"     + iter  + ".txt",append=T);	}
+	else	{
+		if (size(p1.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		p1Individuals = p1.individuals;
+		sampledIndividuals = sample(p1Individuals, 50,replace=T);
+		sampledIndividuals.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop1_outputSample1"     + iter  + ".txt",append=T);	}}
+	
+	//get mutations of microsats
+	sim.outputMutations(sim.mutationsOfType(m2),filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_outputSample1"     + iter  + ".txt",append=T);
+	
+	//get pop size and age of oldest ind
+	inds = p1.individuals;
+	ages = inds.age;
+	mortality = M[ages];
+	survival = 1 - mortality;
+	inds.fitnessScaling = survival;
+	
+	age_dist=sort(p1.individuals.age);
+	all=sum(age_dist>=0);
+	zero =all-(sum(age_dist > 0));
+	ten=sum(age_dist <= 10);
+	twenty=(sum(age_dist <=20))-ten;
+	thirty=(sum(age_dist <=30))-ten-twenty;
+	forty=(sum(age_dist <=40))-ten-twenty-thirty;
+	fifty=(sum(age_dist <=50))-ten-twenty-thirty-forty;
+	sixty=(sum(age_dist <=60))-ten-twenty-thirty-forty-fifty;
+	seventy=(sum(age_dist <=70))-ten-twenty-thirty-forty-fifty-sixty;
+	eighty=(sum(age_dist <=80))-ten-twenty-thirty-forty-fifty-sixty-seventy;
+	ninty=(sum(age_dist <=90))-ten-twenty-thirty-forty-fifty-sixty-seventy-eighty;
+	hundred=(sum(age_dist <=100))-ten-twenty-thirty-forty-fifty-sixty-seventy-eighty-ninty;
+	
+	clonal_0=sum(p1.individuals.tag==0);
+	clonal_2=sum(p1.individuals.tag==2);
+	clonal_zero_0=sum((p1.individuals.age ==0) & (p1.individuals.tag==0));
+	clonal_zero_2=sum((p1.individuals.age ==0) & (p1.individuals.tag==2));
+	clonal_zero=clonal_zero_0 + clonal_zero_2;
+	clonal_ten_0 =(sum((p1.individuals.age <=10) & (p1.individuals.tag==0)))/ten;
+	clonal_ten_2 =(sum((p1.individuals.age <=10) & (p1.individuals.tag==2)))/ten;
+	clonal_ten =clonal_ten_0 + clonal_ten_2;
+	clonal_twenty =(sum((p1.individuals.age <=20) & (p1.individuals.age >10)& (p1.individuals.tag==2)))/twenty;
+	clonal_thirty =(sum((p1.individuals.age <=30) & (p1.individuals.age >20)& (p1.individuals.tag==2)))/thirty;
+	clonal_forty =(sum((p1.individuals.age <=40) & (p1.individuals.age >30)& (p1.individuals.tag==2)))/forty;
+	clonal_fifty =(sum((p1.individuals.age <=50) & (p1.individuals.age >40)& (p1.individuals.tag==2)))/fifty;
+	clonal_sixty =(sum((p1.individuals.age<=60) & (p1.individuals.age >50)& (p1.individuals.tag==2)))/sixty;
+	clonal_seventy =(sum((p1.individuals.age <=70) & (p1.individuals.age >60)& (p1.individuals.tag==2)))/seventy;
+	clonal_eighty =(sum((p1.individuals.age <=80) & (p1.individuals.age >70)& (p1.individuals.tag==2)))/eighty;
+	clonal_ninty =(sum((p1.individuals.age <=90) & (p1.individuals.age >80)& (p1.individuals.tag==2)))/ninty;
+	clonal_hundred =(sum((p1.individuals.age <=100) & (p1.individuals.age >90)& (p1.individuals.tag==2)))/hundred;
+	
+	cat("Generation = " + sim.generation + " Pop size = " + size(inds) + " Max ind age = " + max(inds.age) + " Mean fitness = " + mean(survival) + " Percentage new recruits = " + zero/all*100 + " Percentage up to 10 = " + ten/all*100 + " Percentage up to 20 = " + twenty/all*100 + " Percentage up to 30 = " + thirty/all*100 + " Percentage up to 40 = " + forty/all*100 + " Percentage up to 50 = " + fifty/all*100 + " Percentage up to 60 = " + sixty/all*100 + " Percentage up to 70 = " + seventy/all*100 + " Percentage up to 80 = " + eighty/all*100 + " Percentage up to 90 = " + ninty/all*100 + " Percentage up to 100 = " + hundred/all*100+  "\n" +
+		" Proportion clonal_0 =" + (clonal_0)/size(inds)+ " Proportion clonal_2 =" + (clonal_2)/size(inds)+" Proportion clonal new recruits =" + clonal_zero/zero+ " (" + clonal_zero_0/zero + " + "+ clonal_zero_2/zero + ") " + " Clonal ten = "+ clonal_ten+ " (" + clonal_ten_0 + " + "+ clonal_ten_2 + ") " + " Clonal twenty = " +clonal_twenty+" Clonal thirty = " +clonal_thirty+ " Clonal forty = " +clonal_forty+" Clonal fifty = " +clonal_fifty+" Clonal sixty = " +clonal_sixty+" Clonal seventy = " +clonal_seventy+" Clonal eighty = " +clonal_eighty+" Clonal ninty = " +clonal_ninty+ " Clonal hundred = " +clonal_hundred+"\n");
+	//catn(" Individual Age " + p1.individuals.age + " SEX =tag1 =" + p1.individuals.tag+"\n");
+
+}
+
+28001:28112 late() {	//to keep track of pop sizes
+if (sim.generation % 10 != 0)
+		return;
+		cat("\n"  + "Generation " + sim.generation);
+		cat(" Subpop " + sim.subpopulations.id + ":" + sim.subpopulations.individualCount);
+	//}.  //this is not working, use 
+	if (sum(sim.subpopulations.individualCount) == 0)
+		stop("Global extinction in generation " + sim.generation + ".");
+
+	total = 0;
+	comp_i = 0;
+	n = 0;
+	a1 = 0;
+	a2 = 0;
+	
+	//look at all inds
+	samp = p1.genomes;
+	
+	//Estimates mean number of pairwise differences
+	for(i in samp){
+		xi = i.mutations;
+		j = i;
+		for(j in samp){
+			if(j != i){
+				xj = j.mutations;
+				shared = sum(match(xi, xj) >= 0);
+				unshared = xi.size() + xj.size() - shared;
+				total = total + unshared;
+				comp_i = comp_i + 1;
+			}
+		}
+		
+		n = n + 1;
+		
+		if (n < size(samp)){
+			a1 = a1+1/n;
+			a2 = a2+1/n^2;
+		}
+	}
+	
+	total = total / comp_i;
+	pi = total / (sim.chromosome.lastPosition + 1);
+	S = size(unique(samp.mutations));
+	
+	//Estimates Tajima's D
+	b1 = (n+1)/(3*(n-1));
+	b2 = 2*(n^2+n+3)/(9*n*(n-1));
+	c1 = b1-1/a1;
+	c2 = b2-(n+2)/(a1*n)+(a2/a1^2);
+	e1 = c1/a1;
+	e2 = c2/(a1^2+a2);
+	
+	D = (total-S/a1)/(e1*S+e2*S*(S-1))^0.5;
+	
+	//Prints out the results
+	cat("\n" + "Generation = " +(sim.generation-1)+" Pi = "+pi+" D = "+D+"\n");  //here I have generation -1 to spot beginning and end of each generation output!
+	//line = paste("Generation = " +(sim.generation-1)+" Pi = "+pi+" D = "+D+"\n");
+	//writeFile("./test" + iter  + ".txt", line, append=T);
+	
+	// Calculate mean nucleotide heterozygosity across the population, this isn't relevant for microsats really, so remove
+	total = 0.0;
+	for (ind in p1.individuals)
+	{
+		// Calculate the nucleotide heterozygosity of this individual
+		muts0 = ind.genomes[0].mutations;
+		muts1 = ind.genomes[1].mutations;
+		
+		// Count the shared mutations
+		shared_count = sum(match(muts0, muts1) >= 0);
+		
+		// All remaining mutations are unshared (i.e. heterozygous)
+		unshared_count = muts0.size() + muts1.size() - 2 * shared_count;
+		
+		// pi is the mean heterozygosity across the chromosome
+		pi_ind = unshared_count / (sim.chromosome.lastPosition + 1);
+		total = total + pi_ind;
+	}
+	
+	pi = total / p1.individuals.size();
+	
+	cat("Mean nucleotide heterozygosity = " + pi + "\n");
+	cat("Pop size = " + p1.individuals.size() + "\n");
+	//line=paste("Mean nucleotide heterozygosity = " + pi + "\n");
+	//writeFile("./test" + iter  + ".txt", line, append=T);
+	//line=paste("Pop size = " + p1.individuals.size() + "\n");
+	//writeFile("./test" + iter  + ".txt", line, append=T);
+	
+	// print frequency information for each microsatellite site
+	
+	// print frequency information for each microsatellite site
+	all_msats = sim.mutationsOfType(m2);
+	
+	for (pos in sort(msatPositions))
+	{
+		catn("Microsatellite at " + pos + ":");
+		
+		msatsAtPos = all_msats[all_msats.position == pos];
+		
+		for (msat in sortBy(msatsAtPos, "tag"))
+			catn("   variant with " + msat.tag + " repeats: " +
+			sim.mutationFrequencies(NULL, msat));
+	}
+	cat(" Ar ="+(size(sim.mutationsOfType(m2))/20)+"\n");
+	
+	// get output for number of inds sampled
+	p1Individuals = p1.individuals;
+	if (size(p1.individuals)>50)	{
+		sampledIndividuals = sample(p1Individuals, 50);
+		sampledIndividuals.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop1_outputSample1" + iter +  ".txt",append=T);	}
+	else	{
+	if (size(p1.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		sampledIndividuals = sample(p1Individuals, 50,replace=T);
+		sampledIndividuals.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop1_outputSample1"    +  iter +  ".txt",append=T);	}
+		}
+	//get mutations of microsats
+	sim.outputMutations(sim.mutationsOfType(m2), filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_outputSample1"     + iter  + ".txt",append=T);
+	
+		p3Individuals = p3.individuals;
+	if (size(p3.individuals)>50)	{
+		sampledIndividuals3 = sample(p3Individuals, 50);
+		sampledIndividuals3.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop3_outputSample1"      + iter  + ".txt",append=T);	}
+	else	{
+		if (size(p3.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		sampledIndividuals3 = sample(p3Individuals, 50,replace=T);
+		sampledIndividuals3.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop3_outputSample1"    + iter  + ".txt",append=T);	}
+}
+	
+		p4Individuals = p4.individuals;
+	if (size(p4.individuals)>50)	{
+		sampledIndividuals4 = sample(p4Individuals, 50);
+		sampledIndividuals4.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop4_outputSample1"    + iter  + ".txt",append=T);	}
+	else	{
+		if (size(p4.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		sampledIndividuals4 = sample(p4Individuals, 50,replace=T);
+		sampledIndividuals4.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop4_outputSample1"    + iter  + ".txt",append=T);	}
+	}
+		p5Individuals = p5.individuals;
+	if (size(p5.individuals)>50)	{
+		sampledIndividuals5 = sample(p5Individuals, 50);
+		sampledIndividuals5.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop5_outputSample1"    + iter  + ".txt",append=T);	}
+	else	{
+		if (size(p5.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		sampledIndividuals5 = sample(p5Individuals, 50,replace=T);
+		sampledIndividuals5.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop5_outputSample1"    + iter  + ".txt",append=T);	}
+}
+		p6Individuals = p6.individuals;
+	if (size(p6.individuals)>50)	{
+		sampledIndividuals6 = sample(p6Individuals, 50);
+		sampledIndividuals6.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop6_outputSample1"    + iter  + ".txt",append=T);	}
+	else	{
+		if (size(p6.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		sampledIndividuals6 = sample(p6Individuals, 50,replace=T);
+		sampledIndividuals6.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop6_outputSample1"    + iter  + ".txt",append=T);	}
+		}
+		p7Individuals = p7.individuals;
+	if (size(p7.individuals)>50)	{
+		sampledIndividuals7 = sample(p7Individuals, 50);
+		sampledIndividuals7.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop7_outputSample1"    + iter  + ".txt",append=T);	}
+	else	{
+		if (size(p7.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		sampledIndividuals7 = sample(p7Individuals, 50,replace=T);
+		sampledIndividuals7.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop7_outputSample1"    + iter  + ".txt",append=T);	}
+	}
+		p8Individuals = p8.individuals;
+	if (size(p8.individuals)>50)	{
+		sampledIndividuals8 = sample(p8Individuals, 50);
+		sampledIndividuals8.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop8_outputSample1"    + iter  + ".txt",append=T);	}
+	else	{
+		if (size(p8.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		sampledIndividuals8 = sample(p8Individuals, 50,replace=T);
+		sampledIndividuals8.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop8_outputSample1"    + iter  + ".txt",append=T);	}
+	}
+		p9Individuals = p9.individuals;
+	if (size(p9.individuals)>50)	{
+		sampledIndividuals9 = sample(p9Individuals, 50);
+		sampledIndividuals9.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop9_outputSample1"    + iter  + ".txt",append=T);	}
+	else	{
+		if (size(p9.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		sampledIndividuals9 = sample(p9Individuals, 50,replace=T);
+		sampledIndividuals9.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop9_outputSample1"    + iter  + ".txt",append=T);	}
+	}
+			p10Individuals = p10.individuals;
+	if (size(p10.individuals)>50)	{
+		sampledIndividuals = sample(p10Individuals, 50);
+		sampledIndividuals10.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop10_outputSample1"     + iter  + ".txt",append=T);	}
+	else	{
+		if (size(p10.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		sampledIndividuals10 = sample(p10Individuals, 50,replace=T);
+		sampledIndividuals10.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop10_outputSample1"    + iter  + ".txt",append=T);	}
+	}
+		p11Individuals = p11.individuals;
+	if (size(p11.individuals)>50)	{
+		sampledIndividuals11 = sample(p11Individuals, 50);
+		sampledIndividuals11.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop11_outputSample1"    + iter  + ".txt",append=T);	}
+	else	{
+		if (size(p11.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		sampledIndividuals11 = sample(p11Individuals, 50,replace=T);
+		sampledIndividuals11.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop11_outputSample1"    + iter  + ".txt",append=T);	}
+		}
+		p12Individuals = p12.individuals;
+	if (size(p12.individuals)>50)	{
+		sampledIndividuals12 = sample(p12Individuals, 50);
+		sampledIndividuals12.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop12_outputSample1"    + iter  + ".txt", append=T);	}
+	else	{
+		if (size(p12.individuals)==0)	{
+	print("Extinction in generation " + sim.generation + ".");}
+	else {
+		sampledIndividuals12 = sample(p12Individuals, 50,replace=T);
+		sampledIndividuals12.genomes.output(filePath = "~/Documents/FORMAS/ABC_modelling_workshop/trials_Oct2018/future_slim_modelling/Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop12_outputSample1"    + iter + ".txt" ,append=T);	}
+	}
+		//get pop size and age of oldest ind
+		if (size(p1.individuals)>0)	{
+	inds = p1.individuals;
+	ages = inds.age;
+	mortality = M[ages];
+	survival = 1 - mortality;
+	inds.fitnessScaling = survival;
+	
+	age_dist=sort(p1.individuals.age);
+	all=sum(age_dist>=0);
+	zero=sum(p1.individuals.age==0);
+	ten=sum(age_dist <= 10);
+	twenty=(sum(age_dist <=20))-ten;
+	thirty=(sum(age_dist <=30))-ten-twenty;
+	forty=(sum(age_dist <=40))-ten-twenty-thirty;
+	fifty=(sum(age_dist <=50))-ten-twenty-thirty-forty;
+	sixty=(sum(age_dist <=60))-ten-twenty-thirty-forty-fifty;
+	seventy=(sum(age_dist <=70))-ten-twenty-thirty-forty-fifty-sixty;
+	eighty=(sum(age_dist <=80))-ten-twenty-thirty-forty-fifty-sixty-seventy;
+	ninty=(sum(age_dist <=90))-ten-twenty-thirty-forty-fifty-sixty-seventy-eighty;
+	hundred=(sum(age_dist <=100))-ten-twenty-thirty-forty-fifty-sixty-seventy-eighty-ninty;
+	
+	clonal_0=sum(p1.individuals.tag==0);
+	clonal_2=sum(p1.individuals.tag==2);
+	clonal_zero_0=sum((p1.individuals.age ==0) & (p1.individuals.tag==0));
+	clonal_zero_2=sum((p1.individuals.age ==0) & (p1.individuals.tag==2));
+	clonal_zero=clonal_zero_0 + clonal_zero_2;
+	clonal_ten_0 =(sum((p1.individuals.age <=10) & (p1.individuals.tag==0)))/ten;
+	clonal_ten_2 =(sum((p1.individuals.age <=10) & (p1.individuals.tag==2)))/ten;
+	clonal_ten =clonal_ten_0 + clonal_ten_2;
+	clonal_twenty =(sum((p1.individuals.age <=20) & (p1.individuals.age >10)& (p1.individuals.tag==2)))/twenty;
+	clonal_thirty =(sum((p1.individuals.age <=30) & (p1.individuals.age >20)& (p1.individuals.tag==2)))/thirty;
+	clonal_forty =(sum((p1.individuals.age <=40) & (p1.individuals.age >30)& (p1.individuals.tag==2)))/forty;
+	clonal_fifty =(sum((p1.individuals.age <=50) & (p1.individuals.age >40)& (p1.individuals.tag==2)))/fifty;
+	clonal_sixty =(sum((p1.individuals.age<=60) & (p1.individuals.age >50)& (p1.individuals.tag==2)))/sixty;
+	clonal_seventy =(sum((p1.individuals.age <=70) & (p1.individuals.age >60)& (p1.individuals.tag==2)))/seventy;
+	clonal_eighty =(sum((p1.individuals.age <=80) & (p1.individuals.age >70)& (p1.individuals.tag==2)))/eighty;
+	clonal_ninty =(sum((p1.individuals.age <=90) & (p1.individuals.age >80)& (p1.individuals.tag==2)))/ninty;
+	clonal_hundred =(sum((p1.individuals.age <=100) & (p1.individuals.age >90)& (p1.individuals.tag==2)))/hundred;
+	
+	cat("Generation = " + sim.generation + " Pop size = " + size(inds) + " Max ind age = " + max(inds.age) + " Mean fitness = " + mean(survival) + " Percentage new recruits = " + zero/all*100 + " Percentage up to 10 = " + ten/all*100 + " Percentage up to 20 = " + twenty/all*100 + " Percentage up to 30 = " + thirty/all*100 + " Percentage up to 40 = " + forty/all*100 + " Percentage up to 50 = " + fifty/all*100 + " Percentage up to 60 = " + sixty/all*100 + " Percentage up to 70 = " + seventy/all*100 + " Percentage up to 80 = " + eighty/all*100 + " Percentage up to 90 = " + ninty/all*100 + " Percentage up to 100 = " + hundred/all*100+  "\n" +
+		" Proportion clonal_0 =" + (clonal_0)/size(inds)+ " Proportion clonal_2 =" + (clonal_2)/size(inds)+" Proportion clonal new recruits =" + clonal_zero/zero+ " (" + clonal_zero_0/zero + " + "+ clonal_zero_2/zero + ") " + " Clonal ten = "+ clonal_ten+ " (" + clonal_ten_0 + " + "+ clonal_ten_2 + ") " + " Clonal twenty = " +clonal_twenty+" Clonal thirty = " +clonal_thirty+ " Clonal forty = " +clonal_forty+" Clonal fifty = " +clonal_fifty+" Clonal sixty = " +clonal_sixty+" Clonal seventy = " +clonal_seventy+" Clonal eighty = " +clonal_eighty+" Clonal ninty = " +clonal_ninty+ " Clonal hundred = " +clonal_hundred+"\n");
+	//catn(" Individual Age " + p1.individuals.age + " SEX =tag1 =" + p1.individuals.tag+"\n");
+
+}
+else {
+print("p1 extinct");
+}
+}
+
+
+

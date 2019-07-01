@@ -1,0 +1,76 @@
+#
+scp Zostera* .
+
+#read slim files and make into one file per generation before analysis in R
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_outputSample1.txt| awk '/#OUT: 1000 GS/,/#OUT: 1000 T/' > Zostera_microsat_2bottlenecks_WF_outputSample1_1_1000.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample1_1_1000.txt| awk '/Genomes:/,/#OUT: 1000 T/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample1_1_gen1000.txt
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_outputSample1.txt| awk '/#OUT: 2000 GS/,/#OUT: 2000 T/' > Zostera_microsat_2bottlenecks_WF_outputSample1_1_4000.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample1_1_4000.txt| awk '/Genomes:/,/#OUT: 2000 T/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample1_1_gen2000.txt
+*etc
+
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_outputSample1_1.txt| awk '/#OUT: 1000 GS/,/#OUT: 1000 T/' > Zostera_microsat_2bottlenecks_nonWF_lim5_outputSample1_1_1000.txt
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_outputSample1_1_1000.txt| awk '/Genomes:/,/#OUT: 1000 T/' > Zostera_microsat_2bottlenecks_nonWF_lim5_outputSample1_1_gen1000.txt
+*etc
+
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_outputSample1_trial1.txt| awk '/#OUT: 20001 GS/,/#OUT: 20001 T/' > Zostera_microsat_2bottlenecks_WF_outputSample1_trial1_200001.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample1_trial1_200001.txt| awk '/Genomes:/,/#OUT: 200001 T/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample1_trial1_gen200001.txt
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_outputSample1_trial1.txt| awk '/#OUT: 20002 GS/,/#OUT: 20002 T/' > Zostera_microsat_2bottlenecks_WF_outputSample1_trial1_200002.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample1_trial1_200002.txt| awk '/Genomes:/,/#OUT: 200002 T/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample1_trial1_gen200002.txt
+*etc
+
+
+##make sure that they are all about the same size!
+## then go to R, and use R scripts for analysis
+
+#to grep pop size out of slim file before analysis in R
+cat Zostera_microsat_2bottlenecks_nonWF_outputSample1_1.txt| awk '/Pop/,"%s\n"' > Zostera_microsat_2bottlenecks_nonWF_outputSample1_1_popsizes.txt
+cat Zostera_microsat_2bottlenecks_nonWF_outputSample1_1.txt| awk '/Generation/,"%s\n"' > Zostera_microsat_2bottlenecks_nonWF_outputSample1_1_generations.txt
+
+
+#to run SliM on cluster
+module load SLiM/v2.6
+#slim -seed $Seed -d indv=$i -d haplo=1 -d s_het=1.02 -d n_sam=100 inversion_forall_nogc.txt #Emma's
+slim -seed 1253 ./Zostera_microsat_hist_bottleneck_G2.slim
+for ((i=1; i<=10; i=i+1));  do slim -d "iter='$i'" ./Zostera_microsat_hist_bottleneck_cluster_G2.slim; done;
+
+*to run slim on laptop in command line
+for ((i=1; i<=20; i=i+1));  do slim -d "iter='$i'" ./Zostera_microsat_hist_bottleneck_nonWF_future_declining_K_iter.slim; done &> output_future_Kdecline.txt 
+
+
+#for future
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop1_outputSample11.txt| awk '/#OUT: 1000 GS/,/#OUT: 1000 T/' > Zostera_microsat_2bottlenecks_WF_Pop1_outputSample11_1_1000.txt
+cat Zostera_microsat_2bottlenecks_WF_Pop1_outputSample11_1_1000.txt| awk '/Genomes:/,/#OUT: 1000 T/' > Zostera_microsat_2bottlenecks_nonWF_mig_Pop1_outputSample11_1_gen1000.txt
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop1_outputSample11.txt| awk '/#OUT: 2000 GS/,/#OUT: 2000 T/' > Zostera_microsat_2bottlenecks_WF_Pop1_outputSample11_1_4000.txt
+cat Zostera_microsat_2bottlenecks_WF_Pop1_outputSample11_1_4000.txt| awk '/Genomes:/,/#OUT: 2000 T/' > Zostera_microsat_2bottlenecks_nonWF_mig_Pop1_outputSample11_1_gen2000.txt
+*etc
+
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop12_outputSample13.txt| awk '/#OUT: 28010 GS/,/#OUT: 28020 GS/' > Zostera_microsat_2bottlenecks_WF_outputSample13_1_10.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample13_1_10.txt| awk '/Genomes:/,/#OUT: 28020 GS/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample13_1_Pop12_gen10.txt
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop12_outputSample13.txt| awk '/#OUT: 28020 GS/,/#OUT: 28030 GS/' > Zostera_microsat_2bottlenecks_WF_outputSample13_1_20.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample13_1_20.txt| awk '/Genomes:/,/#OUT: 28030 GS/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample13_1_Pop12_gen20.txt
+*etc
+
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop12_outputSample14.txt| awk '/#OUT: 28010 GS/,/#OUT: 28020 GS/' > Zostera_microsat_2bottlenecks_WF_outputSample14_1_10.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample14_1_10.txt| awk '/Genomes:/,/#OUT: 28020 GS/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample14_1_Pop12_gen10.txt
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop12_outputSample14.txt| awk '/#OUT: 28020 GS/,/#OUT: 28030 GS/' > Zostera_microsat_2bottlenecks_WF_outputSample14_1_20.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample14_1_20.txt| awk '/Genomes:/,/#OUT: 28030 GS/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample14_1_Pop12_gen20.txt
+*etc
+
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop12_outputSample17.txt| awk '/#OUT: 28010 GS/,/#OUT: 28020 GS/' > Zostera_microsat_2bottlenecks_WF_outputSample17_1_10.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample17_1_10.txt| awk '/Genomes:/,/#OUT: 28020 GS/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample17_1_Pop12_gen10.txt
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop12_outputSample17.txt| awk '/#OUT: 28020 GS/,/#OUT: 28030 GS/' > Zostera_microsat_2bottlenecks_WF_outputSample17_1_20.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample17_1_20.txt| awk '/Genomes:/,/#OUT: 28030 GS/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample17_1_Pop12_gen20.txt
+*etc
+
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop12_outputSample18.txt| awk '/#OUT: 28010 GS/,/#OUT: 28020 GS/' > Zostera_microsat_2bottlenecks_WF_outputSample18_1_10.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample18_1_10.txt| awk '/Genomes:/,/#OUT: 28020 GS/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample18_1_Pop12_gen10.txt
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop12_outputSample18.txt| awk '/#OUT: 28020 GS/,/#OUT: 28030 GS/' > Zostera_microsat_2bottlenecks_WF_outputSample18_1_20.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample18_1_20.txt| awk '/Genomes:/,/#OUT: 28030 GS/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample18_1_Pop12_gen20.txt
+*etc
+
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop12_outputSample19.txt| awk '/#OUT: 28010 GS/,/#OUT: 28020 GS/' > Zostera_microsat_2bottlenecks_WF_outputSample19_1_10.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample19_1_10.txt| awk '/Genomes:/,/#OUT: 28020 GS/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample19_1_Pop12_gen10.txt
+cat Zostera_microsat_2bottlenecks_nonWF_lim5_1000IND_clon0.3_mut0.002_mig_Pop12_outputSample19.txt| awk '/#OUT: 28020 GS/,/#OUT: 28030 GS/' > Zostera_microsat_2bottlenecks_WF_outputSample19_1_20.txt
+cat Zostera_microsat_2bottlenecks_WF_outputSample19_1_20.txt| awk '/Genomes:/,/#OUT: 28030 GS/' > Zostera_microsat_2bottlenecks_nonWF_mig_outputSample19_1_Pop12_gen20.txt
+*etc
+
